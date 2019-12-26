@@ -3,17 +3,18 @@ package mock
 import (
 	abci "github.com/tendermint/tendermint/abci/types"
 	cmn "github.com/tendermint/tendermint/libs/common"
-	"github.com/tendermint/tendermint/proxy"
 	"github.com/tendermint/tendermint/rpc/client"
 	ctypes "github.com/tendermint/tendermint/rpc/core/types"
 	"github.com/tendermint/tendermint/types"
+	"github.com/tendermint/tendermint/version"
 )
 
 // ABCIApp will send all abci related request to the named app,
 // so you can test app behavior from a client without needing
 // an entire tendermint node
 type ABCIApp struct {
-	App abci.Application
+	App     abci.Application
+	ChainID string
 }
 
 var (
@@ -23,7 +24,12 @@ var (
 )
 
 func (a ABCIApp) ABCIInfo() (*ctypes.ResultABCIInfo, error) {
-	return &ctypes.ResultABCIInfo{Response: a.App.Info(proxy.RequestInfo)}, nil
+	return &ctypes.ResultABCIInfo{Response: a.App.Info(abci.RequestInfo{
+		ChainId:      a.ChainID,
+		Version:      version.Version,
+		BlockVersion: version.BlockProtocol.Uint64(),
+		P2PVersion:   version.P2PProtocol.Uint64(),
+	})}, nil
 }
 
 func (a ABCIApp) ABCIQuery(path string, data cmn.HexBytes) (*ctypes.ResultABCIQuery, error) {
@@ -35,10 +41,11 @@ func (a ABCIApp) ABCIQueryWithOptions(
 	data cmn.HexBytes,
 	opts client.ABCIQueryOptions) (*ctypes.ResultABCIQuery, error) {
 	q := a.App.Query(abci.RequestQuery{
-		Data:   data,
-		Path:   path,
-		Height: opts.Height,
-		Prove:  opts.Prove,
+		ChainId: a.ChainID,
+		Data:    data,
+		Path:    path,
+		Height:  opts.Height,
+		Prove:   opts.Prove,
 	})
 	return &ctypes.ResultABCIQuery{Response: q}, nil
 }
@@ -48,29 +55,29 @@ func (a ABCIApp) ABCIQueryWithOptions(
 // TODO: Make it wait for a commit and set res.Height appropriately.
 func (a ABCIApp) BroadcastTxCommit(tx types.Tx) (*ctypes.ResultBroadcastTxCommit, error) {
 	res := ctypes.ResultBroadcastTxCommit{}
-	res.CheckTx = a.App.CheckTx(abci.RequestCheckTx{Tx: tx})
+	res.CheckTx = a.App.CheckTx(abci.RequestCheckTx{ChainId: a.ChainID, Tx: tx})
 	if res.CheckTx.IsErr() {
 		return &res, nil
 	}
-	res.DeliverTx = a.App.DeliverTx(abci.RequestDeliverTx{Tx: tx})
+	res.DeliverTx = a.App.DeliverTx(abci.RequestDeliverTx{ChainId: a.ChainID, Tx: tx})
 	res.Height = -1 // TODO
 	return &res, nil
 }
 
 func (a ABCIApp) BroadcastTxAsync(tx types.Tx) (*ctypes.ResultBroadcastTx, error) {
-	c := a.App.CheckTx(abci.RequestCheckTx{Tx: tx})
+	c := a.App.CheckTx(abci.RequestCheckTx{ChainId: a.ChainID, Tx: tx})
 	// and this gets written in a background thread...
 	if !c.IsErr() {
-		go func() { a.App.DeliverTx(abci.RequestDeliverTx{Tx: tx}) }() // nolint: errcheck
+		go func() { a.App.DeliverTx(abci.RequestDeliverTx{ChainId: a.ChainID, Tx: tx}) }() // nolint: errcheck
 	}
 	return &ctypes.ResultBroadcastTx{Code: c.Code, Data: c.Data, Log: c.Log, Hash: tx.Hash()}, nil
 }
 
 func (a ABCIApp) BroadcastTxSync(tx types.Tx) (*ctypes.ResultBroadcastTx, error) {
-	c := a.App.CheckTx(abci.RequestCheckTx{Tx: tx})
+	c := a.App.CheckTx(abci.RequestCheckTx{ChainId: a.ChainID, Tx: tx})
 	// and this gets written in a background thread...
 	if !c.IsErr() {
-		go func() { a.App.DeliverTx(abci.RequestDeliverTx{Tx: tx}) }() // nolint: errcheck
+		go func() { a.App.DeliverTx(abci.RequestDeliverTx{ChainId: a.ChainID, Tx: tx}) }() // nolint: errcheck
 	}
 	return &ctypes.ResultBroadcastTx{Code: c.Code, Data: c.Data, Log: c.Log, Hash: tx.Hash()}, nil
 }

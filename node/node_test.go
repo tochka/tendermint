@@ -237,6 +237,7 @@ func TestCreateProposalBlock(t *testing.T) {
 	memplMetrics := mempl.PrometheusMetrics("node_test")
 	mempool := mempl.NewCListMempool(
 		config.Mempool,
+		config.ChainID(),
 		proxyApp.Mempool(),
 		state.LastBlockHeight,
 		mempl.WithMetrics(memplMetrics),

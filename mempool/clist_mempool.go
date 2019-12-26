@@ -35,6 +35,9 @@ type CListMempool struct {
 	txsBytes   int64 // total size of mempool, in bytes
 	rechecking int32 // for re-checking filtered txs on Update()
 
+	// TODO: expected that one node connect to one chain
+	chainID string
+
 	// notify listeners (ie. consensus) when txs are available
 	notifiedTxsAvailable bool
 	txsAvailable         chan struct{} // fires once for each height, when the mempool is not empty
@@ -77,6 +80,7 @@ type CListMempoolOption func(*CListMempool)
 // NewCListMempool returns a new mempool with the given configuration and connection to an application.
 func NewCListMempool(
 	config *cfg.MempoolConfig,
+	chainID string,
 	proxyAppConn proxy.AppConnMempool,
 	height int64,
 	options ...CListMempoolOption,
@@ -84,6 +88,7 @@ func NewCListMempool(
 	mempool := &CListMempool{
 		config:        config,
 		proxyAppConn:  proxyAppConn,
+		chainID:       chainID,
 		txs:           clist.New(),
 		height:        height,
 		rechecking:    0,
@@ -277,7 +282,7 @@ func (mem *CListMempool) CheckTx(tx types.Tx, cb func(*abci.Response), txInfo Tx
 		return err
 	}
 
-	reqRes := mem.proxyAppConn.CheckTxAsync(abci.RequestCheckTx{Tx: tx})
+	reqRes := mem.proxyAppConn.CheckTxAsync(abci.RequestCheckTx{ChainId: mem.chainID, Tx: tx})
 	reqRes.SetCallback(mem.reqResCb(tx, txInfo.SenderID, txInfo.SenderP2PID, cb))
 
 	return nil
@@ -601,8 +606,9 @@ func (mem *CListMempool) recheckTxs() {
 	for e := mem.txs.Front(); e != nil; e = e.Next() {
 		memTx := e.Value.(*mempoolTx)
 		mem.proxyAppConn.CheckTxAsync(abci.RequestCheckTx{
-			Tx:   memTx.tx,
-			Type: abci.CheckTxType_Recheck,
+			ChainId: mem.chainID,
+			Tx:      memTx.tx,
+			Type:    abci.CheckTxType_Recheck,
 		})
 	}
 

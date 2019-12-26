@@ -43,7 +43,7 @@ func newMempoolWithAppAndConfig(cc proxy.ClientCreator, config *cfg.Config) (*CL
 	if err != nil {
 		panic(err)
 	}
-	mempool := NewCListMempool(config.Mempool, appConnMem, 0)
+	mempool := NewCListMempool(config.Mempool, config.ChainID(), appConnMem, 0)
 	mempool.SetLogger(log.TestingLogger())
 	return mempool, func() { os.RemoveAll(config.RootDir) }
 }
@@ -92,14 +92,15 @@ func checkTxs(t *testing.T, mempool Mempool, count int, peerID uint16) types.Txs
 func TestReapMaxBytesMaxGas(t *testing.T) {
 	app := kvstore.NewKVStoreApplication()
 	cc := proxy.NewLocalClientCreator(app)
-	mempool, cleanup := newMempoolWithApp(cc)
+	conf := cfg.ResetTestRoot("mempool_test")
+	mempool, cleanup := newMempoolWithAppAndConfig(cc, conf)
 	defer cleanup()
 
 	// Ensure gas calculation behaves as expected
 	checkTxs(t, mempool, 1, UnknownPeerID)
 	tx0 := mempool.TxsFront().Value.(*mempoolTx)
 	// assert that kv store has gas wanted = 1.
-	require.Equal(t, app.CheckTx(abci.RequestCheckTx{Tx: tx0.tx}).GasWanted, int64(1), "KVStore had a gas value neq to 1")
+	require.Equal(t, app.CheckTx(abci.RequestCheckTx{ChainId: conf.ChainID(), Tx: tx0.tx}).GasWanted, int64(1), "KVStore had a gas value neq to 1")
 	require.Equal(t, tx0.gasWanted, int64(1), "transactions gas was set incorrectly")
 	// ensure each tx is 20 bytes long
 	require.Equal(t, len(tx0.tx), 20, "Tx is longer than 20 bytes")
@@ -257,11 +258,13 @@ func TestTxsAvailable(t *testing.T) {
 }
 
 func TestSerialReap(t *testing.T) {
+	config := cfg.ResetTestRoot("mempool_test")
 	app := counter.NewCounterApplication(true)
-	app.SetOption(abci.RequestSetOption{Key: "serial", Value: "on"})
+	app.SetOption(abci.RequestSetOption{ChainId: config.ChainID(), Key: "serial", Value: "on"})
 	cc := proxy.NewLocalClientCreator(app)
 
-	mempool, cleanup := newMempoolWithApp(cc)
+	mempool, cleanup := newMempoolWithAppAndConfig(cc, config)
+	newMempoolWithApp(cc)
 	defer cleanup()
 
 	appConnCon, _ := cc.NewABCIClient()
@@ -314,7 +317,7 @@ func TestSerialReap(t *testing.T) {
 		for i := start; i < end; i++ {
 			txBytes := make([]byte, 8)
 			binary.BigEndian.PutUint64(txBytes, uint64(i))
-			res, err := appConnCon.DeliverTxSync(abci.RequestDeliverTx{Tx: txBytes})
+			res, err := appConnCon.DeliverTxSync(abci.RequestDeliverTx{ChainId: config.ChainID(), Tx: txBytes})
 			if err != nil {
 				t.Errorf("Client error committing tx: %v", err)
 			}
@@ -323,7 +326,7 @@ func TestSerialReap(t *testing.T) {
 					res.Code, res.Data, res.Log)
 			}
 		}
-		res, err := appConnCon.CommitSync()
+		res, err := appConnCon.CommitSync(abci.RequestCommit{ChainId: config.ChainID()})
 		if err != nil {
 			t.Errorf("Client error committing: %v", err)
 		}
@@ -510,7 +513,8 @@ func TestMempoolTxsBytes(t *testing.T) {
 	// 6. zero after tx is rechecked and removed due to not being valid anymore
 	app2 := counter.NewCounterApplication(true)
 	cc = proxy.NewLocalClientCreator(app2)
-	mempool, cleanup = newMempoolWithApp(cc)
+	config = cfg.ResetTestRoot("mempool_test")
+	mempool, cleanup = newMempoolWithAppAndConfig(cc, config)
 	defer cleanup()
 
 	txBytes := make([]byte, 8)
@@ -525,10 +529,10 @@ func TestMempoolTxsBytes(t *testing.T) {
 	err = appConnCon.Start()
 	require.Nil(t, err)
 	defer appConnCon.Stop()
-	res, err := appConnCon.DeliverTxSync(abci.RequestDeliverTx{Tx: txBytes})
+	res, err := appConnCon.DeliverTxSync(abci.RequestDeliverTx{ChainId: config.ChainID(), Tx: txBytes})
 	require.NoError(t, err)
 	require.EqualValues(t, 0, res.Code)
-	res2, err := appConnCon.CommitSync()
+	res2, err := appConnCon.CommitSync(abci.RequestCommit{ChainId: config.ChainID()})
 	require.NoError(t, err)
 	require.NotEmpty(t, res2.Data)
 

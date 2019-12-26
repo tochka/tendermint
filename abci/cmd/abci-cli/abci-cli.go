@@ -38,6 +38,7 @@ var (
 	flagAbci     string
 	flagVerbose  bool   // for the println output
 	flagLogLevel string // for the logger
+	flagChainID  string
 
 	// query
 	flagPath   string
@@ -82,6 +83,7 @@ var RootCmd = &cobra.Command{
 				return err
 			}
 		}
+		client = chainClient{chainID: flagChainID, client: client}
 		return nil
 	},
 }
@@ -123,6 +125,7 @@ func addGlobalFlags() {
 		false,
 		"print the command and results as if it were a console session")
 	RootCmd.PersistentFlags().StringVarP(&flagLogLevel, "log_level", "", "debug", "set the logger level")
+	RootCmd.PersistentFlags().StringVarP(&flagChainID, "chain", "", "tendermint-test", "chain id for the command")
 }
 
 func addQueryFlags() {
@@ -577,7 +580,7 @@ func cmdCheckTx(cmd *cobra.Command, args []string) error {
 
 // Get application Merkle root hash
 func cmdCommit(cmd *cobra.Command, args []string) error {
-	res, err := client.CommitSync()
+	res, err := client.CommitSync(types.RequestCommit{})
 	if err != nil {
 		return err
 	}

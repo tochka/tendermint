@@ -14,21 +14,22 @@ import (
 )
 
 var (
-	stateKey        = []byte("stateKey")
+	stateKey        = []byte("stateKey:")
 	kvPairPrefixKey = []byte("kvPairKey:")
 
 	ProtocolVersion version.Protocol = 0x1
 )
 
 type State struct {
-	db      dbm.DB
+	db      dbm.DB `json:"-"`
 	Size    int64  `json:"size"`
 	Height  int64  `json:"height"`
 	AppHash []byte `json:"app_hash"`
 }
 
-func loadState(db dbm.DB) State {
-	stateBytes := db.Get(stateKey)
+func loadState(db dbm.DB, chainID string) State {
+	chdb := ChainDB{db: db, chainID: chainID}
+	stateBytes := chdb.Get(stateKey)
 	var state State
 	if len(stateBytes) != 0 {
 		err := json.Unmarshal(stateBytes, &state)
@@ -36,7 +37,7 @@ func loadState(db dbm.DB) State {
 			panic(err)
 		}
 	}
-	state.db = db
+	state.db = chdb
 	return state
 }
 
@@ -59,17 +60,20 @@ var _ types.Application = (*KVStoreApplication)(nil)
 type KVStoreApplication struct {
 	types.BaseApplication
 
-	state State
+	db    dbm.DB
+	state map[string]*State
 }
 
 func NewKVStoreApplication() *KVStoreApplication {
-	state := loadState(dbm.NewMemDB())
-	return &KVStoreApplication{state: state}
+	return &KVStoreApplication{db: dbm.NewMemDB(), state: make(map[string]*State)}
 }
 
 func (app *KVStoreApplication) Info(req types.RequestInfo) (resInfo types.ResponseInfo) {
+	if req.ChainId == "" {
+		panic("chain id is empty")
+	}
 	return types.ResponseInfo{
-		Data:       fmt.Sprintf("{\"size\":%v}", app.state.Size),
+		Data:       fmt.Sprintf("{\"size\":%v}", app.State(req.ChainId).Size),
 		Version:    version.ABCIVersion,
 		AppVersion: ProtocolVersion.Uint64(),
 	}
@@ -77,6 +81,9 @@ func (app *KVStoreApplication) Info(req types.RequestInfo) (resInfo types.Respon
 
 // tx is either "key=value" or just arbitrary bytes
 func (app *KVStoreApplication) DeliverTx(req types.RequestDeliverTx) types.ResponseDeliverTx {
+	if req.ChainId == "" {
+		panic("chain id is empty")
+	}
 	var key, value []byte
 	parts := bytes.Split(req.Tx, []byte("="))
 	if len(parts) == 2 {
@@ -85,8 +92,9 @@ func (app *KVStoreApplication) DeliverTx(req types.RequestDeliverTx) types.Respo
 		key, value = req.Tx, req.Tx
 	}
 
-	app.state.db.Set(prefixKey(key), value)
-	app.state.Size += 1
+	s := app.State(req.ChainId)
+	s.db.Set(prefixKey(key), value)
+	s.Size += 1
 
 	events := []types.Event{
 		{
@@ -102,23 +110,35 @@ func (app *KVStoreApplication) DeliverTx(req types.RequestDeliverTx) types.Respo
 }
 
 func (app *KVStoreApplication) CheckTx(req types.RequestCheckTx) types.ResponseCheckTx {
+	if req.ChainId == "" {
+		panic("chain id is empty")
+	}
 	return types.ResponseCheckTx{Code: code.CodeTypeOK, GasWanted: 1}
 }
 
-func (app *KVStoreApplication) Commit() types.ResponseCommit {
+func (app *KVStoreApplication) Commit(req types.RequestCommit) types.ResponseCommit {
+	if req.ChainId == "" {
+		panic("chain id is empty")
+	}
+
 	// Using a memdb - just return the big endian size of the db
 	appHash := make([]byte, 8)
-	binary.PutVarint(appHash, app.state.Size)
-	app.state.AppHash = appHash
-	app.state.Height += 1
-	saveState(app.state)
+	s := app.State(req.ChainId)
+	binary.PutVarint(appHash, s.Size)
+	s.AppHash = appHash
+	s.Height += 1
+	saveState(*s)
 	return types.ResponseCommit{Data: appHash}
 }
 
 // Returns an associated value or nil if missing.
 func (app *KVStoreApplication) Query(reqQuery types.RequestQuery) (resQuery types.ResponseQuery) {
+	if reqQuery.ChainId == "" {
+		panic("chain id is empty")
+	}
+	s := app.State(reqQuery.ChainId)
 	if reqQuery.Prove {
-		value := app.state.db.Get(prefixKey(reqQuery.Data))
+		value := s.db.Get(prefixKey(reqQuery.Data))
 		resQuery.Index = -1 // TODO make Proof return index
 		resQuery.Key = reqQuery.Data
 		resQuery.Value = value
@@ -130,7 +150,7 @@ func (app *KVStoreApplication) Query(reqQuery types.RequestQuery) (resQuery type
 		return
 	} else {
 		resQuery.Key = reqQuery.Data
-		value := app.state.db.Get(prefixKey(reqQuery.Data))
+		value := s.db.Get(prefixKey(reqQuery.Data))
 		resQuery.Value = value
 		if value != nil {
 			resQuery.Log = "exists"
@@ -139,4 +159,18 @@ func (app *KVStoreApplication) Query(reqQuery types.RequestQuery) (resQuery type
 		}
 		return
 	}
+}
+
+func (app *KVStoreApplication) State(chainID string) *State {
+	if chainID == "" {
+		panic("chain id is empty")
+	}
+	var state *State
+	var ok bool
+	if state, ok = app.state[chainID]; !ok {
+		s := loadState(app.db, chainID)
+		state = &s
+		app.state[chainID] = state
+	}
+	return state
 }

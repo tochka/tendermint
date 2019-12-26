@@ -218,6 +218,7 @@ func DefaultBaseConfig() BaseConfig {
 		PrivValidatorState: defaultPrivValStatePath,
 		NodeKey:            defaultNodeKeyPath,
 		Moniker:            defaultMoniker,
+		chainID:            "tendermint",
 		ProxyApp:           "tcp://127.0.0.1:26658",
 		ABCI:               "socket",
 		LogLevel:           DefaultPackageLogLevels(),

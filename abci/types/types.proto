@@ -41,44 +41,49 @@ message Request {
 }
 
 message RequestEcho {
-  string message = 1;
+  string chain_id = 1;
+  string message = 2;
 }
 
-message RequestFlush {
-}
+message RequestFlush { string chain_id = 1; }
 
 message RequestInfo {
-  string version = 1;
-  uint64 block_version = 2;
-  uint64 p2p_version = 3;
+  string chain_id = 1;
+  string version = 2;
+  uint64 block_version = 3;
+  uint64 p2p_version = 4;
 }
 
 // nondeterministic
 message RequestSetOption {
-  string key = 1;
-  string value = 2;
+  string chain_id = 1;
+  string key = 2;
+  string value = 3;
 }
 
 message RequestInitChain {
-  google.protobuf.Timestamp time = 1  [(gogoproto.nullable)=false, (gogoproto.stdtime)=true];
-  string chain_id = 2;
+  string chain_id = 1;
+  google.protobuf.Timestamp time = 2
+      [ (gogoproto.nullable) = false, (gogoproto.stdtime) = true ];
   ConsensusParams consensus_params = 3;
-  repeated ValidatorUpdate validators = 4  [(gogoproto.nullable)=false];
+  repeated ValidatorUpdate validators = 4 [ (gogoproto.nullable) = false ];
   bytes app_state_bytes = 5;
 }
 
 message RequestQuery {
-  bytes data = 1;
-  string path = 2;
-  int64 height = 3;
-  bool prove = 4;
+  string chain_id = 1;
+  bytes data = 2;
+  string path = 3;
+  int64 height = 4;
+  bool prove = 5;
 }
 
 message RequestBeginBlock {
-  bytes hash = 1;
-  Header header = 2 [(gogoproto.nullable)=false];
-  LastCommitInfo last_commit_info = 3 [(gogoproto.nullable)=false];
-  repeated Evidence byzantine_validators = 4 [(gogoproto.nullable)=false];
+  string chain_id = 1;
+  bytes hash = 2;
+  Header header = 3 [ (gogoproto.nullable) = false ];
+  LastCommitInfo last_commit_info = 4 [ (gogoproto.nullable) = false ];
+  repeated Evidence byzantine_validators = 5 [ (gogoproto.nullable) = false ];
 }
 
 enum CheckTxType {
@@ -87,20 +92,22 @@ enum CheckTxType {
 }
 
 message RequestCheckTx {
-  bytes tx = 1;
-  CheckTxType type = 2;
+  string chain_id = 1;
+  bytes tx = 2;
+  CheckTxType type = 3;
 }
 
 message RequestDeliverTx {
-  bytes tx = 1;
+  string chain_id = 1;
+  bytes tx = 2;
 }
 
 message RequestEndBlock {
-  int64 height = 1;
+  string chain_id = 1;
+  int64 height = 2;
 }
 
-message RequestCommit {
-}
+message RequestCommit { string chain_id = 1; }
 
 //----------------------------------------
 // Response types
@@ -123,16 +130,11 @@ message Response {
 }
 
 // nondeterministic
-message ResponseException {
-  string error = 1;
-}
+message ResponseException { string error = 1; }
 
-message ResponseEcho {
-  string message = 1;
-}
+message ResponseEcho { string message = 1; }
 
-message ResponseFlush {
-}
+message ResponseFlush {}
 
 message ResponseInfo {
   string data = 1;
@@ -154,13 +156,13 @@ message ResponseSetOption {
 
 message ResponseInitChain {
   ConsensusParams consensus_params = 1;
-  repeated ValidatorUpdate validators = 2 [(gogoproto.nullable)=false];
+  repeated ValidatorUpdate validators = 2 [ (gogoproto.nullable) = false ];
 }
 
 message ResponseQuery {
   uint32 code = 1;
   // bytes data = 2; // use "value" instead.
-  string log = 3; // nondeterministic
+  string log = 3;  // nondeterministic
   string info = 4; // nondeterministic
   int64 index = 5;
   bytes key = 6;
@@ -171,35 +173,48 @@ message ResponseQuery {
 }
 
 message ResponseBeginBlock {
-  repeated Event events = 1 [(gogoproto.nullable)=false, (gogoproto.jsontag)="events,omitempty"];
+  repeated Event events = 1 [
+    (gogoproto.nullable) = false,
+    (gogoproto.jsontag) = "events,omitempty"
+  ];
 }
 
 message ResponseCheckTx {
   uint32 code = 1;
   bytes data = 2;
-  string log = 3; // nondeterministic
+  string log = 3;  // nondeterministic
   string info = 4; // nondeterministic
-  int64 gas_wanted  = 5;
+  int64 gas_wanted = 5;
   int64 gas_used = 6;
-  repeated Event events = 7 [(gogoproto.nullable)=false, (gogoproto.jsontag)="events,omitempty"];
+  repeated Event events = 7 [
+    (gogoproto.nullable) = false,
+    (gogoproto.jsontag) = "events,omitempty"
+  ];
   string codespace = 8;
 }
 
 message ResponseDeliverTx {
   uint32 code = 1;
   bytes data = 2;
-  string log = 3; // nondeterministic
+  string log = 3;  // nondeterministic
   string info = 4; // nondeterministic
   int64 gas_wanted = 5;
   int64 gas_used = 6;
-  repeated Event events = 7 [(gogoproto.nullable)=false, (gogoproto.jsontag)="events,omitempty"];
+  repeated Event events = 7 [
+    (gogoproto.nullable) = false,
+    (gogoproto.jsontag) = "events,omitempty"
+  ];
   string codespace = 8;
 }
 
 message ResponseEndBlock {
-  repeated ValidatorUpdate validator_updates = 1 [(gogoproto.nullable)=false];
+  repeated ValidatorUpdate validator_updates = 1
+      [ (gogoproto.nullable) = false ];
   ConsensusParams consensus_param_updates = 2;
-  repeated Event events = 3 [(gogoproto.nullable)=false, (gogoproto.jsontag)="events,omitempty"];
+  repeated Event events = 3 [
+    (gogoproto.nullable) = false,
+    (gogoproto.jsontag) = "events,omitempty"
+  ];
 }
 
 message ResponseCommit {
@@ -233,18 +248,19 @@ message EvidenceParams {
 }
 
 // ValidatorParams contains limits on validators.
-message ValidatorParams {
-  repeated string pub_key_types = 1;
-}
+message ValidatorParams { repeated string pub_key_types = 1; }
 
 message LastCommitInfo {
   int32 round = 1;
-  repeated VoteInfo votes = 2 [(gogoproto.nullable)=false];
+  repeated VoteInfo votes = 2 [ (gogoproto.nullable) = false ];
 }
 
 message Event {
   string type = 1;
-  repeated common.KVPair attributes = 2 [(gogoproto.nullable)=false, (gogoproto.jsontag)="attributes,omitempty"];
+  repeated common.KVPair attributes = 2 [
+    (gogoproto.nullable) = false,
+    (gogoproto.jsontag) = "attributes,omitempty"
+  ];
 }
 
 //----------------------------------------
@@ -252,26 +268,28 @@ message Event {
 
 message Header {
   // basic block info
-  Version version = 1 [(gogoproto.nullable)=false];
-  string chain_id = 2 [(gogoproto.customname)="ChainID"];
+  Version version = 1 [ (gogoproto.nullable) = false ];
+  string chain_id = 2 [ (gogoproto.customname) = "ChainID" ];
   int64 height = 3;
-  google.protobuf.Timestamp time = 4 [(gogoproto.nullable)=false, (gogoproto.stdtime)=true];
+  google.protobuf.Timestamp time = 4
+      [ (gogoproto.nullable) = false, (gogoproto.stdtime) = true ];
   int64 num_txs = 5;
   int64 total_txs = 6;
 
   // prev block info
-  BlockID last_block_id = 7 [(gogoproto.nullable)=false];
+  BlockID last_block_id = 7 [ (gogoproto.nullable) = false ];
 
   // hashes of block data
   bytes last_commit_hash = 8; // commit from validators from the last block
   bytes data_hash = 9;        // transactions
 
   // hashes from the app output from the prev block
-  bytes validators_hash = 10;   // validators for the current block
-  bytes next_validators_hash = 11;   // validators for the next block
-  bytes consensus_hash = 12;   // consensus params for current block
-  bytes app_hash = 13;         // state after txs from the previous block
-  bytes last_results_hash = 14;// root hash of all results from the txs from the previous block
+  bytes validators_hash = 10;      // validators for the current block
+  bytes next_validators_hash = 11; // validators for the next block
+  bytes consensus_hash = 12;       // consensus params for current block
+  bytes app_hash = 13;             // state after txs from the previous block
+  bytes last_results_hash =
+      14; // root hash of all results from the txs from the previous block
 
   // consensus info
   bytes evidence_hash = 15;    // evidence included in the block
@@ -283,10 +301,9 @@ message Version {
   uint64 App = 2;
 }
 
-
 message BlockID {
   bytes hash = 1;
-  PartSetHeader parts_header = 2 [(gogoproto.nullable)=false];
+  PartSetHeader parts_header = 2 [ (gogoproto.nullable) = false ];
 }
 
 message PartSetHeader {
@@ -297,32 +314,33 @@ message PartSetHeader {
 // Validator
 message Validator {
   bytes address = 1;
-  //PubKey pub_key = 2 [(gogoproto.nullable)=false];
+  // PubKey pub_key = 2 [(gogoproto.nullable)=false];
   int64 power = 3;
 }
 
 // ValidatorUpdate
 message ValidatorUpdate {
-  PubKey pub_key = 1 [(gogoproto.nullable)=false];
+  PubKey pub_key = 1 [ (gogoproto.nullable) = false ];
   int64 power = 2;
 }
 
 // VoteInfo
 message VoteInfo {
-  Validator validator = 1 [(gogoproto.nullable)=false];
+  Validator validator = 1 [ (gogoproto.nullable) = false ];
   bool signed_last_block = 2;
 }
 
 message PubKey {
   string type = 1;
-  bytes  data = 2;
+  bytes data = 2;
 }
 
 message Evidence {
   string type = 1;
-  Validator validator = 2 [(gogoproto.nullable)=false];
+  Validator validator = 2 [ (gogoproto.nullable) = false ];
   int64 height = 3;
-  google.protobuf.Timestamp time = 4 [(gogoproto.nullable)=false, (gogoproto.stdtime)=true];
+  google.protobuf.Timestamp time = 4
+      [ (gogoproto.nullable) = false, (gogoproto.stdtime) = true ];
   int64 total_voting_power = 5;
 }
 
@@ -330,7 +348,7 @@ message Evidence {
 // Service Definition
 
 service ABCIApplication {
-  rpc Echo(RequestEcho) returns (ResponseEcho) ;
+  rpc Echo(RequestEcho) returns (ResponseEcho);
   rpc Flush(RequestFlush) returns (ResponseFlush);
   rpc Info(RequestInfo) returns (ResponseInfo);
   rpc SetOption(RequestSetOption) returns (ResponseSetOption);

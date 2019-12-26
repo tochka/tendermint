@@ -24,7 +24,7 @@ const (
 )
 
 func testKVStore(t *testing.T, app types.Application, tx []byte, key, value string) {
-	req := types.RequestDeliverTx{Tx: tx}
+	req := types.RequestDeliverTx{ChainId: t.Name(), Tx: tx}
 	ar := app.DeliverTx(req)
 	require.False(t, ar.IsErr(), ar)
 	// repeating tx doesn't raise error
@@ -33,17 +33,19 @@ func testKVStore(t *testing.T, app types.Application, tx []byte, key, value stri
 
 	// make sure query is fine
 	resQuery := app.Query(types.RequestQuery{
-		Path: "/store",
-		Data: []byte(key),
+		ChainId: t.Name(),
+		Path:    "/store",
+		Data:    []byte(key),
 	})
 	require.Equal(t, code.CodeTypeOK, resQuery.Code)
 	require.Equal(t, value, string(resQuery.Value))
 
 	// make sure proof is fine
 	resQuery = app.Query(types.RequestQuery{
-		Path:  "/store",
-		Data:  []byte(key),
-		Prove: true,
+		ChainId: t.Name(),
+		Path:    "/store",
+		Data:    []byte(key),
+		Prove:   true,
 	})
 	require.EqualValues(t, code.CodeTypeOK, resQuery.Code)
 	require.Equal(t, value, string(resQuery.Value))
@@ -83,10 +85,10 @@ func TestPersistentKVStoreInfo(t *testing.T) {
 		t.Fatal(err)
 	}
 	kvstore := NewPersistentKVStoreApplication(dir)
-	InitKVStore(kvstore)
+	InitKVStore(kvstore, t.Name())
 	height := int64(0)
 
-	resInfo := kvstore.Info(types.RequestInfo{})
+	resInfo := kvstore.Info(types.RequestInfo{ChainId: t.Name()})
 	if resInfo.LastBlockHeight != height {
 		t.Fatalf("expected height of %d, got %d", height, resInfo.LastBlockHeight)
 	}
@@ -97,11 +99,11 @@ func TestPersistentKVStoreInfo(t *testing.T) {
 	header := types.Header{
 		Height: height,
 	}
-	kvstore.BeginBlock(types.RequestBeginBlock{Hash: hash, Header: header})
-	kvstore.EndBlock(types.RequestEndBlock{Height: header.Height})
-	kvstore.Commit()
+	kvstore.BeginBlock(types.RequestBeginBlock{ChainId: t.Name(), Hash: hash, Header: header})
+	kvstore.EndBlock(types.RequestEndBlock{ChainId: t.Name(), Height: header.Height})
+	kvstore.Commit(types.RequestCommit{ChainId: t.Name()})
 
-	resInfo = kvstore.Info(types.RequestInfo{})
+	resInfo = kvstore.Info(types.RequestInfo{ChainId: t.Name()})
 	if resInfo.LastBlockHeight != height {
 		t.Fatalf("expected height of %d, got %d", height, resInfo.LastBlockHeight)
 	}
@@ -122,10 +124,11 @@ func TestValUpdates(t *testing.T) {
 	vals := RandVals(total)
 	// iniitalize with the first nInit
 	kvstore.InitChain(types.RequestInitChain{
+		ChainId:    t.Name(),
 		Validators: vals[:nInit],
 	})
 
-	vals1, vals2 := vals[:nInit], kvstore.Validators()
+	vals1, vals2 := vals[:nInit], kvstore.Validators(t.Name())
 	valsEqual(t, vals1, vals2)
 
 	var v1, v2, v3 types.ValidatorUpdate
@@ -138,7 +141,7 @@ func TestValUpdates(t *testing.T) {
 
 	makeApplyBlock(t, kvstore, 1, diff, tx1, tx2)
 
-	vals1, vals2 = vals[:nInit+2], kvstore.Validators()
+	vals1, vals2 = vals[:nInit+2], kvstore.Validators(t.Name())
 	valsEqual(t, vals1, vals2)
 
 	// remove some validators
@@ -154,7 +157,7 @@ func TestValUpdates(t *testing.T) {
 	makeApplyBlock(t, kvstore, 2, diff, tx1, tx2, tx3)
 
 	vals1 = append(vals[:nInit-2], vals[nInit+1]) // nolint: gocritic
-	vals2 = kvstore.Validators()
+	vals2 = kvstore.Validators(t.Name())
 	valsEqual(t, vals1, vals2)
 
 	// update some validators
@@ -170,7 +173,7 @@ func TestValUpdates(t *testing.T) {
 	makeApplyBlock(t, kvstore, 3, diff, tx1)
 
 	vals1 = append([]types.ValidatorUpdate{v1}, vals1[1:]...)
-	vals2 = kvstore.Validators()
+	vals2 = kvstore.Validators(t.Name())
 	valsEqual(t, vals1, vals2)
 
 }
@@ -188,14 +191,14 @@ func makeApplyBlock(
 		Height: height,
 	}
 
-	kvstore.BeginBlock(types.RequestBeginBlock{Hash: hash, Header: header})
+	kvstore.BeginBlock(types.RequestBeginBlock{ChainId: t.Name(), Hash: hash, Header: header})
 	for _, tx := range txs {
-		if r := kvstore.DeliverTx(types.RequestDeliverTx{Tx: tx}); r.IsErr() {
+		if r := kvstore.DeliverTx(types.RequestDeliverTx{ChainId: t.Name(), Tx: tx}); r.IsErr() {
 			t.Fatal(r)
 		}
 	}
-	resEndBlock := kvstore.EndBlock(types.RequestEndBlock{Height: header.Height})
-	kvstore.Commit()
+	resEndBlock := kvstore.EndBlock(types.RequestEndBlock{ChainId: t.Name(), Height: header.Height})
+	kvstore.Commit(types.RequestCommit{ChainId: t.Name()})
 
 	valsEqual(t, diff, resEndBlock.ValidatorUpdates)
 
@@ -293,18 +296,19 @@ func runClientTests(t *testing.T, client abcicli.Client) {
 }
 
 func testClient(t *testing.T, app abcicli.Client, tx []byte, key, value string) {
-	ar, err := app.DeliverTxSync(types.RequestDeliverTx{Tx: tx})
+	ar, err := app.DeliverTxSync(types.RequestDeliverTx{ChainId: t.Name(), Tx: tx})
 	require.NoError(t, err)
 	require.False(t, ar.IsErr(), ar)
 	// repeating tx doesn't raise error
-	ar, err = app.DeliverTxSync(types.RequestDeliverTx{Tx: tx})
+	ar, err = app.DeliverTxSync(types.RequestDeliverTx{ChainId: t.Name(), Tx: tx})
 	require.NoError(t, err)
 	require.False(t, ar.IsErr(), ar)
 
 	// make sure query is fine
 	resQuery, err := app.QuerySync(types.RequestQuery{
-		Path: "/store",
-		Data: []byte(key),
+		ChainId: t.Name(),
+		Path:    "/store",
+		Data:    []byte(key),
 	})
 	require.Nil(t, err)
 	require.Equal(t, code.CodeTypeOK, resQuery.Code)
@@ -312,9 +316,10 @@ func testClient(t *testing.T, app abcicli.Client, tx []byte, key, value string) 
 
 	// make sure proof is fine
 	resQuery, err = app.QuerySync(types.RequestQuery{
-		Path:  "/store",
-		Data:  []byte(key),
-		Prove: true,
+		ChainId: t.Name(),
+		Path:    "/store",
+		Data:    []byte(key),
+		Prove:   true,
 	})
 	require.Nil(t, err)
 	require.Equal(t, code.CodeTypeOK, resQuery.Code)

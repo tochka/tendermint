@@ -322,6 +322,7 @@ func createMempoolAndMempoolReactor(config *cfg.Config, proxyApp proxy.AppConns,
 
 	mempool := mempl.NewCListMempool(
 		config.Mempool,
+		config.ChainID(),
 		proxyApp.Mempool(),
 		state.LastBlockHeight,
 		mempl.WithMetrics(memplMetrics),

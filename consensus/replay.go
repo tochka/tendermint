@@ -241,7 +241,12 @@ func (h *Handshaker) NBlocks() int {
 func (h *Handshaker) Handshake(proxyApp proxy.AppConns) error {
 
 	// Handshake is done via ABCI Info on the query conn.
-	res, err := proxyApp.Query().InfoSync(proxy.RequestInfo)
+	res, err := proxyApp.Query().InfoSync(abci.RequestInfo{
+		ChainId:      h.genDoc.ChainID,
+		Version:      version.Version,
+		BlockVersion: version.BlockProtocol.Uint64(),
+		P2PVersion:   version.P2PProtocol.Uint64(),
+	})
 	if err != nil {
 		return fmt.Errorf("Error calling Info: %v", err)
 	}
@@ -543,6 +548,6 @@ func (mock *mockProxyApp) EndBlock(req abci.RequestEndBlock) abci.ResponseEndBlo
 	return *mock.abciResponses.EndBlock
 }
 
-func (mock *mockProxyApp) Commit() abci.ResponseCommit {
+func (mock *mockProxyApp) Commit(req abci.RequestCommit) abci.ResponseCommit {
 	return abci.ResponseCommit{Data: mock.appHash}
 }

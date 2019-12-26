@@ -157,7 +157,7 @@ func TestABCIRecorder(t *testing.T) {
 func TestABCIApp(t *testing.T) {
 	assert, require := assert.New(t), require.New(t)
 	app := kvstore.NewKVStoreApplication()
-	m := mock.ABCIApp{app}
+	m := mock.ABCIApp{app, "test"}
 
 	// get some info
 	info, err := m.ABCIInfo()
@@ -176,7 +176,7 @@ func TestABCIApp(t *testing.T) {
 	// commit
 	// TODO: This may not be necessary in the future
 	if res.Height == -1 {
-		m.App.Commit()
+		m.App.Commit(abci.RequestCommit{ChainId: m.ChainID})
 	}
 
 	// check the key

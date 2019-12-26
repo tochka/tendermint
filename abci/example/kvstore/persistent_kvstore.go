@@ -41,10 +41,8 @@ func NewPersistentKVStoreApplication(dbDir string) *PersistentKVStoreApplication
 		panic(err)
 	}
 
-	state := loadState(db)
-
 	return &PersistentKVStoreApplication{
-		app:                &KVStoreApplication{state: state},
+		app:                &KVStoreApplication{db: db, state: make(map[string]*State)},
 		valAddrToPubKeyMap: make(map[string]types.PubKey),
 		logger:             log.NewNopLogger(),
 	}
@@ -56,8 +54,8 @@ func (app *PersistentKVStoreApplication) SetLogger(l log.Logger) {
 
 func (app *PersistentKVStoreApplication) Info(req types.RequestInfo) types.ResponseInfo {
 	res := app.app.Info(req)
-	res.LastBlockHeight = app.app.state.Height
-	res.LastBlockAppHash = app.app.state.AppHash
+	res.LastBlockHeight = app.app.State(req.ChainId).Height
+	res.LastBlockAppHash = app.app.State(req.ChainId).AppHash
 	return res
 }
 
@@ -67,12 +65,15 @@ func (app *PersistentKVStoreApplication) SetOption(req types.RequestSetOption) t
 
 // tx is either "val:pubkey!power" or "key=value" or just arbitrary bytes
 func (app *PersistentKVStoreApplication) DeliverTx(req types.RequestDeliverTx) types.ResponseDeliverTx {
+	if req.ChainId == "" {
+		panic("chain id is empty")
+	}
 	// if it starts with "val:", update the validator set
 	// format is "val:pubkey!power"
 	if isValidatorTx(req.Tx) {
 		// update validators in the merkle tree
 		// and in app.ValUpdates
-		return app.execValidatorTx(req.Tx)
+		return app.execValidatorTx(req.ChainId, req.Tx)
 	}
 
 	// otherwise, update the key-value store
@@ -84,17 +85,20 @@ func (app *PersistentKVStoreApplication) CheckTx(req types.RequestCheckTx) types
 }
 
 // Commit will panic if InitChain was not called
-func (app *PersistentKVStoreApplication) Commit() types.ResponseCommit {
-	return app.app.Commit()
+func (app *PersistentKVStoreApplication) Commit(req types.RequestCommit) types.ResponseCommit {
+	return app.app.Commit(req)
 }
 
 // When path=/val and data={validator address}, returns the validator update (types.ValidatorUpdate) varint encoded.
 // For any other path, returns an associated value or nil if missing.
 func (app *PersistentKVStoreApplication) Query(reqQuery types.RequestQuery) (resQuery types.ResponseQuery) {
+	if reqQuery.ChainId == "" {
+		panic("chain id is empty")
+	}
 	switch reqQuery.Path {
 	case "/val":
 		key := []byte("val:" + string(reqQuery.Data))
-		value := app.app.state.db.Get(key)
+		value := app.app.State(reqQuery.ChainId).db.Get(key)
 
 		resQuery.Key = reqQuery.Data
 		resQuery.Value = value
@@ -106,8 +110,11 @@ func (app *PersistentKVStoreApplication) Query(reqQuery types.RequestQuery) (res
 
 // Save the validators in the merkle tree
 func (app *PersistentKVStoreApplication) InitChain(req types.RequestInitChain) types.ResponseInitChain {
+	if req.ChainId == "" {
+		panic("chain id is empty")
+	}
 	for _, v := range req.Validators {
-		r := app.updateValidator(v)
+		r := app.updateValidator(req.ChainId, v)
 		if r.IsErr() {
 			app.logger.Error("Error updating validators", "r", r)
 		}
@@ -117,6 +124,9 @@ func (app *PersistentKVStoreApplication) InitChain(req types.RequestInitChain) t
 
 // Track the block hash and header information
 func (app *PersistentKVStoreApplication) BeginBlock(req types.RequestBeginBlock) types.ResponseBeginBlock {
+	if req.ChainId == "" {
+		panic("chain id is empty")
+	}
 	// reset valset changes
 	app.ValUpdates = make([]types.ValidatorUpdate, 0)
 
@@ -126,7 +136,7 @@ func (app *PersistentKVStoreApplication) BeginBlock(req types.RequestBeginBlock)
 			if ev.TotalVotingPower == 0 {
 				continue
 			}
-			app.updateValidator(types.ValidatorUpdate{
+			app.updateValidator(req.ChainId, types.ValidatorUpdate{
 				PubKey: app.valAddrToPubKeyMap[string(ev.Validator.Address)],
 				Power:  ev.TotalVotingPower - 1,
 			})
@@ -137,14 +147,20 @@ func (app *PersistentKVStoreApplication) BeginBlock(req types.RequestBeginBlock)
 
 // Update the validator set
 func (app *PersistentKVStoreApplication) EndBlock(req types.RequestEndBlock) types.ResponseEndBlock {
+	if req.ChainId == "" {
+		panic("chain id is empty")
+	}
 	return types.ResponseEndBlock{ValidatorUpdates: app.ValUpdates}
 }
 
 //---------------------------------------------
 // update validators
 
-func (app *PersistentKVStoreApplication) Validators() (validators []types.ValidatorUpdate) {
-	itr := app.app.state.db.Iterator(nil, nil)
+func (app *PersistentKVStoreApplication) Validators(chainID string) (validators []types.ValidatorUpdate) {
+	if chainID == "" {
+		panic("chain id is empty")
+	}
+	itr := app.app.State(chainID).db.Iterator(nil, nil)
 	for ; itr.Valid(); itr.Next() {
 		if isValidatorTx(itr.Key()) {
 			validator := new(types.ValidatorUpdate)
@@ -169,7 +185,7 @@ func isValidatorTx(tx []byte) bool {
 
 // format is "val:pubkey!power"
 // pubkey is a base64-encoded 32-byte ed25519 key
-func (app *PersistentKVStoreApplication) execValidatorTx(tx []byte) types.ResponseDeliverTx {
+func (app *PersistentKVStoreApplication) execValidatorTx(chainID string, tx []byte) types.ResponseDeliverTx {
 	tx = tx[len(ValidatorSetChangePrefix):]
 
 	//get the pubkey and power
@@ -198,25 +214,26 @@ func (app *PersistentKVStoreApplication) execValidatorTx(tx []byte) types.Respon
 	}
 
 	// update
-	return app.updateValidator(types.Ed25519ValidatorUpdate(pubkey, power))
+	return app.updateValidator(chainID, types.Ed25519ValidatorUpdate(pubkey, power))
 }
 
 // add, update, or remove a validator
-func (app *PersistentKVStoreApplication) updateValidator(v types.ValidatorUpdate) types.ResponseDeliverTx {
+func (app *PersistentKVStoreApplication) updateValidator(chainId string, v types.ValidatorUpdate) types.ResponseDeliverTx {
 	key := []byte("val:" + string(v.PubKey.Data))
 
 	pubkey := ed25519.PubKeyEd25519{}
 	copy(pubkey[:], v.PubKey.Data)
 
+	s := app.app.State(chainId)
 	if v.Power == 0 {
 		// remove validator
-		if !app.app.state.db.Has(key) {
+		if !s.db.Has(key) {
 			pubStr := base64.StdEncoding.EncodeToString(v.PubKey.Data)
 			return types.ResponseDeliverTx{
 				Code: code.CodeTypeUnauthorized,
 				Log:  fmt.Sprintf("Cannot remove non-existent validator %s", pubStr)}
 		}
-		app.app.state.db.Delete(key)
+		s.db.Delete(key)
 		delete(app.valAddrToPubKeyMap, string(pubkey.Address()))
 	} else {
 		// add or update validator
@@ -226,7 +243,7 @@ func (app *PersistentKVStoreApplication) updateValidator(v types.ValidatorUpdate
 				Code: code.CodeTypeEncodingError,
 				Log:  fmt.Sprintf("Error encoding validator: %v", err)}
 		}
-		app.app.state.db.Set(key, value.Bytes())
+		s.db.Set(key, value.Bytes())
 		app.valAddrToPubKeyMap[string(pubkey.Address())] = v.PubKey
 	}
 
